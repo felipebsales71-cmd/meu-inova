@@ -1,0 +1,24 @@
+MEU INOVA - PUBLICACAO SOMENTE COM GITHUB + CLOUDFLARE
+
+1. No GitHub, crie um repositorio chamado meu-inova.
+2. Envie todos os arquivos desta pasta para a raiz do repositorio.
+3. No Cloudflare, abra Workers & Pages.
+4. Importe/conecte o repositorio GitHub.
+5. Selecione a branch main.
+6. Comando de deploy: npx wrangler deploy
+7. Conclua o primeiro deploy.
+8. No Worker criado, adicione os Secrets:
+   SESSION_SECRET
+   SETUP_TOKEN
+9. Se o D1 nao tiver sido provisionado automaticamente, crie um banco D1 e adicione um binding chamado exatamente DB.
+10. Abra https://SEU-ENDERECO.workers.dev/setup.html
+11. Digite o SETUP_TOKEN e crie o primeiro administrador.
+12. Opcionalmente crie um aluno de teste.
+13. Acesse /admin.html para o administrativo.
+14. Acesse /aluno.html para o aluno.
+15. Para e-mail real, configure RESEND_API_KEY e MAIL_FROM.
+16. Para SMS real, configure TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN e TWILIO_SMS_FROM.
+17. Para WhatsApp real, configure WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_GRAPH_VERSION, WHATSAPP_TEMPLATE_NAME e WHATSAPP_TEMPLATE_LANG.
+18. Mantenha o modo de simulacao ligado ate testar as APIs externas.
+
+O administrador nao consegue ver nem definir a senha de alunos reais.
