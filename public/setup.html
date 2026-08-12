@@ -17,15 +17,15 @@
     </div>
   </section>
   <section class="login-panel">
-    <form class="login-card" id="setupForm">
+    <form class="login-card" id="setupForm" autocomplete="off">
       <img class="logo-mini" src="assets/logo.png" alt="Inova">
       <div class="portal-label">Configuração do sistema</div>
       <h2>Primeiro administrador</h2>
       <p class="intro">Use a chave SETUP_TOKEN configurada nos Secrets do Cloudflare.</p>
-      <div class="field"><label>Chave de instalação</label><input id="setupToken" type="password" required></div>
-      <div class="field"><label>Nome do administrador</label><input id="adminName" required></div>
-      <div class="field"><label>E-mail administrativo</label><input id="adminEmail" type="email" required></div>
-      <div class="field"><label>Senha administrativa</label><input id="adminPassword" type="password" minlength="10" required></div>
+      <div class="field"><label>Chave de instalação</label><input id="setupToken" type="password" autocomplete="new-password" spellcheck="false" required></div>
+      <div class="field"><label>Nome do administrador</label><input id="adminName" autocomplete="name" required></div>
+      <div class="field"><label>E-mail administrativo</label><input id="adminEmail" type="email" autocomplete="email" required></div>
+      <div class="field"><label>Senha administrativa</label><input id="adminPassword" type="password" autocomplete="new-password" minlength="10" required></div>
 
       <div class="security-note">Opcional: crie uma conta de aluno apenas para teste de implantação. Em alunos reais, o administrador não escolhe a senha; o aluno recebe um link e define a própria senha.</div>
       <label class="check-line"><input id="demoEnabled" type="checkbox"> Criar aluno de teste</label>
@@ -47,9 +47,16 @@ const enabled=document.getElementById('demoEnabled');
 const fields=document.getElementById('demoFields');
 enabled.onchange=()=>{fields.style.display=enabled.checked?'block':'none'};
 const result=document.getElementById('result');
+const setupTokenInput=document.getElementById('setupToken');
+setupTokenInput.value='';
+function normalizeSetupToken(value){
+  return String(value||'')
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g,'')
+    .trim();
+}
 async function check(){
   try{
-    const r=await fetch('/api/system/status');
+    const r=await fetch('/api/system/status',{cache:'no-store'});
     const j=await r.json();
     if(j.configured){
       result.textContent='A instalação inicial já foi concluída. Esta página não pode criar outro administrador.';
@@ -60,8 +67,13 @@ async function check(){
 check();
 document.getElementById('setupForm').onsubmit=async e=>{
   e.preventDefault();
+  const normalizedToken=normalizeSetupToken(setupTokenInput.value);
+  if(!normalizedToken){
+    result.textContent='Informe a chave de instalação.';
+    return;
+  }
   const payload={
-    setupToken:document.getElementById('setupToken').value,
+    setupToken:normalizedToken,
     adminName:document.getElementById('adminName').value.trim(),
     adminEmail:document.getElementById('adminEmail').value.trim(),
     adminPassword:document.getElementById('adminPassword').value,
@@ -76,12 +88,16 @@ document.getElementById('setupForm').onsubmit=async e=>{
     }
   };
   try{
-    const r=await fetch('/api/setup',{method:'POST',headers:{'Content-Type':'application/json','X-Setup-Token':payload.setupToken},body:JSON.stringify(payload)});
+    result.textContent='Validando configuração...';
+    const r=await fetch('/api/setup',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Setup-Token':normalizedToken},body:JSON.stringify(payload)});
     const raw=await r.text();
     let j={};
     try{j=raw?JSON.parse(raw):{}}catch{}
     if(!r.ok){
       const fallback=raw && raw.length<500 ? raw : `Falha na instalação (HTTP ${r.status}).`;
+      if(r.status===403){
+        throw new Error('Chave de instalação inválida. A chave digitada não corresponde ao SETUP_TOKEN atualmente ativo no Worker. Copie novamente o valor salvo no Cloudflare e cole neste campo.');
+      }
       throw new Error(j.detail||fallback);
     }
     result.textContent='Instalação concluída. O acesso administrativo já está disponível.';
