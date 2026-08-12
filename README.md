@@ -1,233 +1,170 @@
-# Meu Inova - GitHub + Cloudflare
+# Meu Inova — GitHub + Cloudflare
 
-Versão do Meu Inova preparada para funcionar sem VPS, Hostinger ou Supabase.
+O Meu Inova é um portal acadêmico, financeiro e administrativo executado em Cloudflare Workers, com código versionado no GitHub e dados transacionais no Cloudflare D1.
 
-A arquitetura desta versão é:
+## Arquitetura
 
-- GitHub: repositório do código.
-- Cloudflare Workers: frontend e API no mesmo endereço.
-- Cloudflare Static Assets: HTML, CSS, JavaScript e logo.
-- Cloudflare D1: banco SQL de alunos, mensalidades, pagamentos, requerimentos, auditoria e notificações.
-- Cloudflare Cron Trigger: verificação diária de mensalidades vencidas.
-- Resend: opcional para e-mail real.
-- Twilio: opcional para SMS real.
-- WhatsApp Cloud API: opcional para WhatsApp real.
+- **GitHub**: versionamento e origem dos deploys.
+- **Cloudflare Workers**: API, autenticação, regras de negócio e entrega do frontend.
+- **Cloudflare Static Assets**: HTML, CSS, JavaScript e identidade visual.
+- **Cloudflare D1**: alunos, financeiro, acadêmico, provas, notas, auditoria e notificações.
+- **Cloudflare Cron Trigger**: rotina diária de inadimplência.
+- **Brevo**: e-mails transacionais de ativação, recuperação de senha e avisos.
+- **Twilio**: integração opcional para SMS.
+- **WhatsApp Cloud API**: integração opcional para WhatsApp.
+- **Cloudflare R2**: armazenamento privado preparado para PDFs e arquivos acadêmicos; o binding será `MATERIALS` quando o bucket for criado.
 
-O sistema inicia com notificações em modo de simulação. Assim, é possível publicar e testar o financeiro antes de contratar ou configurar provedores de mensagens.
+O Portal do Aluno e o Portal Administrativo são separados. A senha do aluno não é exibida nem definida pela administração.
 
-## O que já está implementado
+## Portal do Aluno
 
-### Portal do Aluno
-
-- Acesso separado do administrativo.
 - Login por e-mail, CPF ou matrícula.
-- Bloqueio de login quando a faculdade suspende o acesso.
-- Consulta financeira.
-- Requerimentos.
-- Perfil.
-- Alteração da própria senha.
-- Recuperação de senha por link temporário enviado ao e-mail do titular, quando o provedor de e-mail estiver configurado.
+- Bloqueio quando o acesso é suspenso.
+- Recuperação de senha por link enviado ao titular.
+- Financeiro e cobranças.
+- Requerimentos e perfil.
+- Disciplinas matriculadas.
+- Progresso por aula.
+- Módulos e aulas.
+- Videoaulas incorporadas a partir de URL, incluindo YouTube não listado.
+- PDFs, documentos, apresentações e links de apoio.
+- Avaliações online.
+- Cronômetro de prova.
+- Salvamento de respostas durante a tentativa.
+- Envio automático ao término do tempo.
+- Notas de questões objetivas calculadas no backend.
 
-### Portal Administrativo
+## Portal Administrativo
 
-- Login administrativo independente.
-- Cadastro de aluno.
-- Ativação e suspensão do acesso de aluno.
-- Valor individual de mensalidade.
-- Geração de cobrança.
-- Registro de pagamento total ou parcial.
-- Controle de inadimplência.
-- Configuração de destinatários da faculdade.
-- Canais de e-mail, SMS e WhatsApp.
-- Histórico de notificações.
-- Auditoria de operações.
+- Cadastro, ativação e suspensão de alunos.
+- Mensalidade individual.
+- Cobranças e pagamentos parciais ou totais.
+- Inadimplência e notificações.
+- Auditoria.
+- Cadastro de cursos.
+- Cadastro de disciplinas.
+- Professor, período, código e carga horária por disciplina.
+- Matrícula de alunos por disciplina.
+- Criação de módulos e aulas.
+- Cadastro de videoaulas e materiais.
+- Criação de avaliações online.
+- Questões objetivas e alternativas.
+- Definição de gabarito somente no backend.
+- Janela de disponibilidade, duração e limite de tentativas.
+- Embaralhamento de questões e alternativas.
+- Publicação da prova somente depois de existir questão cadastrada.
+- Consulta de tentativas e resultados.
 
-O administrador não possui rota para visualizar ou definir a senha de um aluno. Ao cadastrar um aluno real, o sistema gera um token de ativação e envia o link diretamente ao e-mail do aluno quando o serviço de e-mail estiver configurado.
+## Modelo acadêmico
 
-## Publicar sem instalar nada no computador
-
-### 1. Criar um repositório no GitHub
-
-Crie um repositório, por exemplo `meu-inova`, e envie todo o conteúdo desta pasta para a raiz do repositório.
-
-A raiz deve conter:
-
-```text
-migrations/
-public/
-src/
-.dev.vars.example
-.gitignore
-package.json
-README.md
-wrangler.jsonc
-```
-
-Não coloque senhas ou tokens dentro do GitHub.
-
-### 2. Conectar o GitHub ao Cloudflare
-
-No painel Cloudflare:
-
-1. Abra `Workers & Pages`.
-2. Escolha a opção para importar/conectar um repositório Git.
-3. Autorize o GitHub.
-4. Selecione o repositório `meu-inova`.
-5. Use a branch `main`.
-6. Mantenha o projeto como Worker, não como site estático isolado.
-7. Use como comando de deploy:
+A hierarquia principal é:
 
 ```text
-npx wrangler deploy
+Curso
+└── Disciplina
+    ├── Matrículas de alunos
+    ├── Módulos
+    │   └── Aulas
+    │       ├── Videoaula
+    │       └── Materiais
+    └── Avaliações
+        └── Questões
+            └── Alternativas
 ```
 
-O arquivo `wrangler.jsonc` já informa ao Cloudflare que o projeto possui frontend, API, D1 e tarefa agendada.
+O D1 cria automaticamente as tabelas acadêmicas na primeira chamada das rotas `/api/academic/*`.
 
-O binding D1 está definido somente como `DB`. Em contas compatíveis com o provisionamento automático do Wrangler, o Cloudflare cria o recurso D1 no primeiro deploy. Se a sua conta pedir seleção manual, crie um D1 no painel e vincule-o ao Worker com o nome exato `DB`.
+Principais tabelas acadêmicas:
 
-### 3. Criar os dois Secrets obrigatórios
+```text
+academic_courses
+academic_disciplines
+academic_enrollments
+academic_modules
+academic_lessons
+academic_materials
+academic_lesson_progress
+academic_exams
+academic_questions
+academic_question_options
+academic_exam_attempts
+academic_exam_answers
+```
 
-Depois que o Worker aparecer no painel, abra as configurações de variáveis/secrets do projeto e crie:
+## Segurança das avaliações
+
+O navegador do aluno não recebe o campo que identifica a alternativa correta. O gabarito permanece no D1 e a correção é realizada no Worker.
+
+Cada tentativa registra, entre outros dados:
+
+- aluno;
+- prova;
+- número da tentativa;
+- início;
+- prazo final;
+- questões atribuídas;
+- respostas;
+- data de finalização;
+- nota.
+
+A API verifica a matrícula do aluno na disciplina antes de liberar conteúdo e prova.
+
+## Materiais e PDFs
+
+Existem duas modalidades de material:
+
+1. **Material por URL** — já funcional. Pode apontar para PDF, documento, apresentação ou outro recurso externo.
+2. **Arquivo privado no R2** — backend preparado, mas depende da criação de um bucket Cloudflare R2 e do binding `MATERIALS`.
+
+Não armazene PDFs grandes no GitHub ou no D1. O desenho definitivo utiliza R2 para arquivos e D1 apenas para metadados e permissões.
+
+Para videoaulas, a fase inicial utiliza URL de vídeo, preferencialmente YouTube não listado. Isso evita usar armazenamento do sistema com arquivos de vídeo pesados enquanto o produto está em homologação.
+
+## E-mail com Brevo
+
+Secrets/variáveis usados no Worker:
+
+```text
+BREVO_API_KEY          # Secret
+BREVO_SENDER_EMAIL     # variável
+BREVO_SENDER_NAME      # variável
+```
+
+A chave não deve ser colocada no GitHub.
+
+O e-mail é usado para:
+
+- ativação de aluno;
+- recuperação de senha;
+- notificações de inadimplência quando o canal está habilitado.
+
+## Secrets obrigatórios
+
+No Cloudflare Worker:
 
 ```text
 SESSION_SECRET
 SETUP_TOKEN
+BREVO_API_KEY
 ```
 
-Use valores longos e aleatórios. Exemplo de formato:
+`SESSION_SECRET` assina as sessões. `SETUP_TOKEN` é utilizado no fluxo inicial de instalação. `BREVO_API_KEY` autentica os e-mails transacionais.
+
+## D1
+
+Binding:
 
 ```text
-SESSION_SECRET = uma-chave-aleatoria-com-pelo-menos-40-caracteres
-SETUP_TOKEN = outra-chave-diferente-para-a-instalacao-inicial
+DB
 ```
 
-Não use esses exemplos literalmente.
-
-`SESSION_SECRET` assina as sessões de aluno e administrador.
-
-`SETUP_TOKEN` protege a criação do primeiro administrador.
-
-### 4. Fazer a instalação inicial
-
-Depois do deploy, o Cloudflare mostrará um endereço parecido com:
+Banco atual:
 
 ```text
-https://meu-inova.<sua-conta>.workers.dev
+meu-inova-db
 ```
 
-Abra:
-
-```text
-https://meu-inova.<sua-conta>.workers.dev/setup.html
-```
-
-Informe:
-
-- a chave `SETUP_TOKEN`;
-- nome do primeiro administrador;
-- e-mail do administrador;
-- senha administrativa.
-
-Opcionalmente, a tela permite criar um aluno de teste. Essa opção existe apenas para homologação. Em alunos reais, a senha é definida pelo próprio aluno pelo fluxo de ativação.
-
-A primeira chamada da API cria automaticamente as tabelas necessárias dentro do D1. Depois que o primeiro administrador é criado, a instalação inicial fica bloqueada.
-
-### 5. Entrar no sistema
-
-Página inicial:
-
-```text
-/
-```
-
-Portal do aluno:
-
-```text
-/aluno.html
-```
-
-Portal administrativo:
-
-```text
-/admin.html
-```
-
-## E-mail real e recuperação de senha
-
-Para enviar links de ativação e recuperação de senha, configure no Cloudflare:
-
-Secret:
-
-```text
-RESEND_API_KEY
-```
-
-Variável:
-
-```text
-MAIL_FROM
-```
-
-O remetente precisa ser aceito pelo provedor de e-mail escolhido.
-
-Sem `RESEND_API_KEY`, o sistema continua funcionando, mas não afirma que o link foi efetivamente entregue. O token de senha não é exibido ao administrador.
-
-## SMS real
-
-Para ativar SMS via Twilio, crie os secrets:
-
-```text
-TWILIO_ACCOUNT_SID
-TWILIO_AUTH_TOKEN
-TWILIO_SMS_FROM
-```
-
-Depois, no Portal Administrativo, abra Notificações e habilite SMS.
-
-## WhatsApp real
-
-Para ativar WhatsApp Cloud API, configure:
-
-```text
-WHATSAPP_ACCESS_TOKEN
-WHATSAPP_PHONE_NUMBER_ID
-WHATSAPP_GRAPH_VERSION
-WHATSAPP_TEMPLATE_NAME
-WHATSAPP_TEMPLATE_LANG
-```
-
-O template configurado no provedor precisa ser compatível com o corpo enviado pelo sistema.
-
-Depois, no Portal Administrativo, habilite WhatsApp e desative o modo de simulação somente depois de testar as credenciais.
-
-## Verificação automática de inadimplência
-
-O `wrangler.jsonc` contém:
-
-```json
-"triggers": {
-  "crons": ["0 12 * * *"]
-}
-```
-
-Isso executa a verificação uma vez por dia, às 12:00 UTC. O sistema usa `America/Cuiaba` para calcular vencimento e dias de atraso.
-
-Também existe o botão de verificação manual dentro do Portal Administrativo.
-
-A rotina:
-
-1. atualiza o status das cobranças;
-2. encontra cobranças vencidas com saldo restante;
-3. respeita a quantidade de dias após o vencimento definida pelo administrador;
-4. respeita o intervalo de repetição;
-5. envia ou simula e-mail, SMS e WhatsApp;
-6. grava o resultado em `notification_logs`.
-
-## Banco de dados
-
-As tabelas são criadas pelo próprio Worker na primeira chamada de API. O arquivo `migrations/0001_schema.sql` também foi mantido no repositório como referência e para futuras migrações controladas.
-
-Principais tabelas:
+As tabelas financeiras/administrativas principais são:
 
 ```text
 admins
@@ -240,28 +177,58 @@ reset_tokens
 audit_log
 ```
 
-## Segurança
+## Publicação
 
-Para uso com alunos reais:
-
-- não publique tokens em GitHub;
-- mantenha o repositório privado enquanto estiver em desenvolvimento;
-- use secrets no Cloudflare;
-- mantenha o modo de simulação de mensagens ativo até configurar os provedores;
-- não use conta de aluno de teste como conta real;
-- use senhas administrativas longas;
-- revise os logs de auditoria;
-- configure domínio próprio antes da operação definitiva;
-- revise LGPD, política de privacidade, retenção de dados e perfis de acesso antes de inserir dados acadêmicos reais.
-
-## Desenvolvimento local opcional
-
-Se um dia quiser rodar localmente:
+O repositório está conectado ao Cloudflare. A branch de produção é `main` e o comando de deploy é:
 
 ```bash
-npm install
-cp .dev.vars.example .dev.vars
-npm run dev
+npx wrangler deploy
 ```
 
-Mas isso não é necessário para publicar pelo fluxo GitHub + Cloudflare.
+Cada commit na `main` inicia um novo build/deploy pelo Cloudflare.
+
+## URLs
+
+```text
+/                escolha do portal
+/aluno.html      Portal do Aluno
+/admin.html      Portal Administrativo
+/reset.html      redefinição de senha
+/setup.html      instalação inicial, bloqueada após o primeiro administrador
+```
+
+## Notificações de inadimplência
+
+A rotina diária:
+
+1. atualiza o status das cobranças;
+2. identifica saldo vencido;
+3. aplica a carência configurada;
+4. respeita o intervalo de repetição;
+5. envia ou simula os canais habilitados;
+6. grava o resultado no histórico.
+
+O cron atualmente é executado uma vez por dia e o cálculo acadêmico/financeiro usa `America/Cuiaba` como timezone da aplicação.
+
+## Próximas evoluções planejadas
+
+- Criar e vincular o bucket R2 `meu-inova-materiais` como `MATERIALS`.
+- Ativar upload direto de PDFs pelo painel administrativo.
+- Criar Portal do Professor com acesso apenas às próprias disciplinas.
+- Adicionar questões discursivas e correção manual.
+- Acrescentar banco de questões reutilizável entre avaliações.
+- Histórico e diário acadêmico integralmente alimentados pelos dados reais do AVA.
+- Frequência baseada em aulas/atividades conforme regra institucional.
+- Relatórios acadêmicos e exportações.
+
+## Segurança e operação real
+
+Antes de uso definitivo com dados acadêmicos reais:
+
+- manter todos os tokens somente em Cloudflare Secrets;
+- configurar domínio próprio e HTTPS;
+- revisar perfis de acesso e trilha de auditoria;
+- revisar política de backups do D1/R2;
+- revisar LGPD, base legal, política de privacidade, retenção e descarte;
+- substituir qualquer configuração de homologação por parâmetros de produção;
+- realizar testes de autorização, recuperação de senha, provas simultâneas e indisponibilidade de provedores externos.
