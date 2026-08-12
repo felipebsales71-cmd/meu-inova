@@ -1,5 +1,6 @@
 import app from "./index.js";
 import { handleAcademic } from "./academic.js";
+import { handleStaff, tryStaffLogin } from "./staff.js";
 
 const encoder = new TextEncoder();
 const nativeFetch = globalThis.fetch.bind(globalThis);
@@ -112,11 +113,36 @@ async function isAuthorizedFirstAdmin(data) {
   return emailHash === FIRST_ADMIN_EMAIL_SHA256 && nameHash === FIRST_ADMIN_NAME_SHA256;
 }
 
+function moduleErrorResponse(error) {
+  const status = Number(error?.status || 500);
+  return new Response(JSON.stringify({ detail: String(error?.message || 'Erro interno do Meu Inova.') }), {
+    status: status >= 400 && status < 600 ? status : 500,
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+  });
+}
+
 export default {
   async fetch(request, env, ctx) {
     configureEmail(env);
     const url = new URL(request.url);
     const effectiveEnv = runtimeEnv(env);
+
+    // Acessos da direção e gestão. A tela continua sendo o Portal Administrativo,
+    // mas cada pessoa define a própria senha por um link de primeiro acesso.
+    if (url.pathname.startsWith('/api/staff/')) {
+      return await handleStaff(request, effectiveEnv);
+    }
+
+    // No login administrativo, tenta primeiro os usuários de direção por username/e-mail.
+    // Se não houver correspondência, preserva o login administrativo original.
+    if (url.pathname === '/api/auth/admin/login' && request.method.toUpperCase() === 'POST') {
+      try {
+        const staffResponse = await tryStaffLogin(request, effectiveEnv);
+        if (staffResponse) return staffResponse;
+      } catch (e) {
+        return moduleErrorResponse(e);
+      }
+    }
 
     // Módulo acadêmico isolado: usa o mesmo D1 e a mesma assinatura de sessão,
     // sem interferir nas rotas financeiras e administrativas já existentes.
