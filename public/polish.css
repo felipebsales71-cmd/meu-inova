@@ -1,0 +1,52 @@
+/* Camada de acabamento visual do Meu Inova. */
+:root{--mi-navy:#07325f;--mi-navy-deep:#031f3d;--mi-orange:#ff6b0b;--mi-soft:#f4f7fb;--mi-border:#dfe7f0}
+body{background:#f3f6fa}
+.sidebar{width:252px;padding:16px 13px;background:linear-gradient(180deg,#07325f 0%,#05294f 58%,#031f3d 100%);box-shadow:12px 0 36px rgba(3,31,61,.08)}
+.main{margin-left:252px}
+.sidebar-brand{height:112px;margin:0 5px 15px;padding:0 10px;border:1px solid rgba(255,255,255,.16);border-radius:17px;background:#fff;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.16)}
+.sidebar-brand img{width:205px;max-width:none;max-height:none;display:block;transform:scale(1.9);transform-origin:center;filter:none}
+.portal-chip{margin:0 6px 13px;padding:9px 11px;border-color:rgba(255,255,255,.18);background:rgba(255,255,255,.035);color:#e4eef7;font-weight:800;letter-spacing:.03em}
+.menu-section{padding:16px 10px 6px;color:#8aa9c7;font-weight:800}
+.nav-item{position:relative;padding:10px 11px;color:#d9e5f1;font-weight:650;border:1px solid transparent}
+.nav-item:hover{background:rgba(255,255,255,.065);border-color:rgba(255,255,255,.05)}
+.nav-item.active{background:rgba(255,255,255,.11);color:#fff;box-shadow:none;border-color:rgba(255,255,255,.08)}
+.nav-item.active:before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:3px;background:var(--mi-orange)}
+.nav-item.active .nav-code{background:var(--mi-orange);color:#fff}
+.nav-code{background:rgba(255,255,255,.09);color:#f0f6fb}
+.topbar{height:72px;padding:0 30px;background:rgba(255,255,255,.96);backdrop-filter:blur(14px);box-shadow:0 1px 0 rgba(14,42,72,.03)}
+.top-title{font-size:14px;letter-spacing:-.01em;color:#0b3158}
+.profile-chip{padding:6px 10px 6px 6px;border:1px solid #e5ebf2;background:#fff;box-shadow:0 6px 18px rgba(10,46,82,.05)}
+.avatar{background:linear-gradient(145deg,#08396d,#0f5a9e);box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
+.content{padding:30px 32px 56px}
+.page-head{margin-bottom:24px}
+.page-head h1{font-size:26px;letter-spacing:-.025em;color:#102a46}
+.page-head p{font-size:12px;max-width:760px;line-height:1.6}
+.card{border-color:#e2e9f1;border-radius:16px;box-shadow:0 10px 32px rgba(15,48,82,.055)}
+.card:hover{border-color:#d9e3ed}
+.primary-btn{background:linear-gradient(90deg,#ff6810,#ff861b);box-shadow:0 8px 18px rgba(255,107,11,.18)}
+.secondary-btn{background:#eef5fc;color:#174f86}
+.stat-icon{border:1px solid rgba(23,105,224,.06)}
+.table-wrap{border-color:#e5ebf2}
+.table th{background:#f6f9fc;color:#57708b}
+.staff-kpis .value{font-size:22px}
+.staff-access-card{padding:21px}
+.staff-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.staff-person-card{border:1px solid #e2e9f1;border-radius:15px;padding:17px;background:linear-gradient(180deg,#fff,#fbfdff)}
+.staff-person-head{display:grid;grid-template-columns:auto 1fr auto;gap:11px;align-items:center}
+.staff-person-head h3{margin:0 0 3px;font-size:13px}
+.staff-person-head p{margin:0;color:#6d8095;font-size:10px}
+.staff-avatar{width:42px;height:42px;font-size:11px}
+.staff-details{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}
+.staff-details>div{padding:11px;border:1px solid #e7edf3;border-radius:11px;background:#f8fafc;min-width:0}
+.staff-details span{display:block;font-size:9px;color:#718096;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em}
+.staff-details b{display:block;font-size:11px;overflow:hidden;text-overflow:ellipsis}
+.staff-actions{display:flex;gap:8px;flex-wrap:wrap}
+.staff-actions .primary-btn,.staff-actions .secondary-btn{flex:1;min-width:145px}
+.staff-first-shell .login-brand img{transform:scale(1.08)}
+.academic-course-card,.exam-card,.academic-row.clickable{transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.academic-course-card:hover,.exam-card:hover,.academic-row.clickable:hover{transform:translateY(-2px);box-shadow:0 14px 30px rgba(17,53,91,.09);border-color:#d4e0ec}
+.academic-flow span{font-weight:800}
+.login-card{border:1px solid #e4eaf1}
+.login-card .logo-mini{width:210px}
+@media(max-width:1050px){.staff-grid{grid-template-columns:1fr}.sidebar{width:236px}.main{margin-left:236px}}
+@media(max-width:760px){.sidebar{width:250px}.main{margin-left:0}.content{padding:22px 16px 42px}.page-head h1{font-size:22px}.staff-details{grid-template-columns:1fr}.sidebar-brand{height:104px}.sidebar-brand img{transform:scale(1.75)}}
