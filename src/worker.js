@@ -1,6 +1,6 @@
 import app from "./index.js";
 import { handleAcademic } from "./academic.js";
-import { handleStaff, tryStaffLogin } from "./staff.js";
+import { handleStaff, tryStaffLogin, enforceStaffAccess } from "./staff.js";
 import { handleFaculty } from "./faculty.js";
 
 const encoder = new TextEncoder();
@@ -76,7 +76,11 @@ export default {
     const url = new URL(request.url);
     const effectiveEnv = runtimeEnv(env);
 
-    if (url.pathname.startsWith('/api/staff/')) return await handleStaff(request, effectiveEnv);
+    // Equipe e permissões usa uma rota própria. O teste exato abaixo é importante:
+    // /api/staff não termina com barra, enquanto os itens individuais terminam.
+    if (url.pathname === '/api/staff' || url.pathname.startsWith('/api/staff/')) {
+      return await handleStaff(request, effectiveEnv);
+    }
 
     if (url.pathname === '/api/auth/admin/login' && request.method.toUpperCase() === 'POST') {
       try {
@@ -84,6 +88,12 @@ export default {
         if (staffResponse) return staffResponse;
       } catch (e) { return moduleErrorResponse(e); }
     }
+
+    // Para usuários internos, aplica RBAC também no backend. Em leituras necessárias
+    // ao bootstrap do painel, o módulo retorna coleções vazias quando o perfil não
+    // possui acesso, evitando expor dados e sem quebrar a inicialização da interface.
+    const permissionResponse = await enforceStaffAccess(request, effectiveEnv);
+    if (permissionResponse) return permissionResponse;
 
     if (url.pathname.startsWith('/api/faculty/')) return await handleFaculty(request, effectiveEnv);
     if (url.pathname.startsWith('/api/academic/')) return await handleAcademic(request, effectiveEnv);
