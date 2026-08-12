@@ -114,25 +114,7 @@ let schemaReady = null;
 async function ensureSchema(env) {
   if (!env.DB) throw new HttpError(500, "Banco D1 não vinculado ao Worker.");
   if (!schemaReady) {
-    schemaReady = (async () => {
-      const existing = await env.DB.prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='admins' LIMIT 1",
-      ).first();
-      if (existing) return true;
-
-      const statements = SCHEMA_SQL
-        .split(";")
-        .map((sql) => sql.trim())
-        .filter(Boolean);
-
-      for (const sql of statements) {
-        await env.DB.prepare(sql).run();
-      }
-      return true;
-    })().catch((e) => {
-      schemaReady = null;
-      throw e;
-    });
+    schemaReady = env.DB.exec(SCHEMA_SQL).catch((e) => { schemaReady = null; throw e; });
   }
   return schemaReady;
 }
@@ -228,19 +210,9 @@ async function sha256Hex(text) {
 }
 
 async function hashPassword(password) {
-  // Workers Free limits each HTTP request to 10 ms of CPU time.
-  // Keep the derivation deliberately modest for this free homologation build.
-  // For production, move authentication to a managed auth provider or a paid runtime
-  // that permits a stronger password KDF cost.
-  const iterations = 25000;
+  const iterations = 210000;
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(password),
-    { name: "PBKDF2" },
-    false,
-    ["deriveBits"],
-  );
+  const keyMaterial = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits(
     { name: "PBKDF2", salt, iterations, hash: "SHA-256" },
     keyMaterial,
@@ -256,13 +228,7 @@ async function verifyPassword(password, encodedHash) {
     if (algo !== "pbkdf2_sha256") return false;
     const salt = bytesFromB64url(salt64);
     const expected = bytesFromB64url(expected64);
-    const keyMaterial = await crypto.subtle.importKey(
-      "raw",
-      encoder.encode(password),
-      { name: "PBKDF2" },
-      false,
-      ["deriveBits"],
-    );
+    const keyMaterial = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
     const bits = await crypto.subtle.deriveBits(
       { name: "PBKDF2", salt, iterations: Number(rounds), hash: "SHA-256" },
       keyMaterial,
@@ -582,102 +548,73 @@ async function handleSetup(request, env) {
   if (!env.SETUP_TOKEN) throw new HttpError(500, "SETUP_TOKEN não configurado no Cloudflare.");
   const supplied = request.headers.get("x-setup-token") || data.setupToken || "";
   if (supplied !== env.SETUP_TOKEN) throw new HttpError(403, "Chave de instalação inválida.");
+  const existing = await env.DB.prepare("SELECT COUNT(*) AS total FROM admins").first();
+  if (Number(existing?.total || 0) > 0) throw new HttpError(409, "A instalação inicial já foi concluída.");
 
-  let stage = "verificação do banco";
-  try {
-    const existing = await env.DB.prepare("SELECT COUNT(*) AS total FROM admins").first();
-    if (Number(existing?.total || 0) > 0) throw new HttpError(409, "A instalação inicial já foi concluída.");
+  const adminName = String(data.adminName || "").trim();
+  const adminEmail = String(data.adminEmail || "").trim().toLowerCase();
+  const adminPassword = String(data.adminPassword || "");
+  if (!adminName || !adminEmail || !adminEmail.includes("@")) throw new HttpError(400, "Informe nome e e-mail administrativo válidos.");
+  if (adminPassword.length < 10) throw new HttpError(400, "A senha administrativa deve ter pelo menos 10 caracteres.");
 
-    stage = "validação dos dados";
-    const adminName = String(data.adminName || "").trim();
-    const adminEmail = String(data.adminEmail || "").trim().toLowerCase();
-    const adminPassword = String(data.adminPassword || "");
-    if (!adminName || !adminEmail || !adminEmail.includes("@")) throw new HttpError(400, "Informe nome e e-mail administrativo válidos.");
-    if (adminPassword.length < 10) throw new HttpError(400, "A senha administrativa deve ter pelo menos 10 caracteres.");
-
-    const demo = data.demoStudent;
-    let demoHash = null;
-    if (demo && demo.enabled) {
-      const demoPassword = String(demo.password || "");
-      if (demoPassword.length < 6) throw new HttpError(400, "A senha do aluno de teste deve ter pelo menos 6 caracteres.");
-      if (!String(demo.email || "").includes("@")) throw new HttpError(400, "Informe um e-mail válido para o aluno de teste.");
-      if (!String(demo.registration || "").trim()) throw new HttpError(400, "Informe a matrícula do aluno de teste.");
-      stage = "proteção da senha do aluno de teste";
-      demoHash = await hashPassword(demoPassword);
-    }
-
-    stage = "proteção da senha administrativa";
-    const adminHash = await hashPassword(adminPassword);
-
-    stage = "gravação do administrador";
-    const adminInsert = await env.DB.prepare(
-      "INSERT INTO admins(name,email,password_hash,active,created_at) VALUES(?,?,?,1,?)",
-    ).bind(adminName, adminEmail, adminHash, nowIso()).run();
-    const adminId = adminInsert?.meta?.last_row_id;
-    if (!adminId) throw new Error("O D1 não retornou o ID do administrador criado.");
-
-    stage = "registro de auditoria";
-    await audit(env, "system", null, "initial_setup", "admin", adminId, { email: adminEmail });
-
-    let demoStudent = null;
-    if (demo && demo.enabled) {
-      stage = "criação do aluno de teste";
-      const ins = await env.DB.prepare(
-        `INSERT INTO students(name,email,cpf,phone,registration,course,period,campus,monthly_fee,access,password_hash,created_at)
-         VALUES(?,?,?,?,?,?,?,?,?,1,?,?)`,
-      ).bind(
-        String(demo.name || "Aluno de Teste"),
-        String(demo.email || "aluno@inova.edu.br").toLowerCase(),
-        demo.cpf || null,
-        demo.phone || null,
-        String(demo.registration || "TESTE001"),
-        String(demo.course || "Curso de Teste"),
-        String(demo.period || "1º Módulo"),
-        String(demo.campus || "Unidade Centro"),
-        Number(demo.monthlyFee || 450),
-        demoHash,
-        nowIso(),
-      ).run();
-      const sid = ins?.meta?.last_row_id;
-      if (!sid) throw new Error("O D1 não retornou o ID do aluno de teste.");
-      demoStudent = await env.DB.prepare("SELECT * FROM students WHERE id = ?").bind(sid).first();
-      const due = localDateISO(env, new Date(Date.now() - 2 * 86400000));
-      const pid = `TESTE-${Date.now()}`;
-      await env.DB.prepare(
-        `INSERT INTO payments(id,student_id,description,due_date,amount_due,amount_paid,status,created_at)
-         VALUES(?,?,?,?,?,0,'Atrasado',?)`,
-      ).bind(pid, sid, "Mensalidade de teste", due, Number(demo.monthlyFee || 450), nowIso()).run();
-    }
-
-    return json({
-      message: "Instalação inicial concluída.",
-      admin: { id: adminId, name: adminName, email: adminEmail },
-      demoStudent: demoStudent ? studentRow(demoStudent) : null,
-    });
-  } catch (e) {
-    if (e instanceof HttpError) throw e;
-    console.error("setup-failure", stage, e);
-    const detail = String(e?.message || e).replace(/\s+/g, " ").slice(0, 280);
-    throw new HttpError(500, `Falha técnica na instalação (${stage}): ${detail}`);
+  const demo = data.demoStudent;
+  let demoHash = null;
+  if (demo && demo.enabled) {
+    const demoPassword = String(demo.password || "");
+    if (demoPassword.length < 6) throw new HttpError(400, "A senha do aluno de teste deve ter pelo menos 6 caracteres.");
+    if (!String(demo.email || "").includes("@")) throw new HttpError(400, "Informe um e-mail válido para o aluno de teste.");
+    if (!String(demo.registration || "").trim()) throw new HttpError(400, "Informe a matrícula do aluno de teste.");
+    demoHash = await hashPassword(demoPassword);
   }
+
+  const adminHash = await hashPassword(adminPassword);
+  const adminInsert = await env.DB.prepare(
+    "INSERT INTO admins(name,email,password_hash,active,created_at) VALUES(?,?,?,1,?)",
+  ).bind(adminName, adminEmail, adminHash, nowIso()).run();
+  const adminId = adminInsert.meta.last_row_id;
+  await audit(env, "system", null, "initial_setup", "admin", adminId, { email: adminEmail });
+
+  let demoStudent = null;
+  if (demo && demo.enabled) {
+    const hash = demoHash;
+    const ins = await env.DB.prepare(
+      `INSERT INTO students(name,email,cpf,phone,registration,course,period,campus,monthly_fee,access,password_hash,created_at)
+       VALUES(?,?,?,?,?,?,?,?,?,1,?,?)`,
+    ).bind(
+      String(demo.name || "Aluno de Teste"),
+      String(demo.email || "aluno@inova.edu.br").toLowerCase(),
+      demo.cpf || null,
+      demo.phone || null,
+      String(demo.registration || "TESTE001"),
+      String(demo.course || "Curso de Teste"),
+      String(demo.period || "1º Módulo"),
+      String(demo.campus || "Unidade Centro"),
+      Number(demo.monthlyFee || 450),
+      hash,
+      nowIso(),
+    ).run();
+    const sid = ins.meta.last_row_id;
+    demoStudent = await env.DB.prepare("SELECT * FROM students WHERE id = ?").bind(sid).first();
+    const due = localDateISO(env, new Date(Date.now() - 2 * 86400000));
+    const pid = `TESTE-${Date.now()}`;
+    await env.DB.prepare(
+      `INSERT INTO payments(id,student_id,description,due_date,amount_due,amount_paid,status,created_at)
+       VALUES(?,?,?,?,?,0,'Atrasado',?)`,
+    ).bind(pid, sid, "Mensalidade de teste", due, Number(demo.monthlyFee || 450), nowIso()).run();
+  }
+
+  return json({
+    message: "Instalação inicial concluída.",
+    admin: { id: adminId, name: adminName, email: adminEmail },
+    demoStudent: demoStudent ? studentRow(demoStudent) : null,
+  });
 }
 
 async function routeApi(request, env) {
+  await ensureSchema(env);
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method.toUpperCase();
-
-  try {
-    await ensureSchema(env);
-  } catch (e) {
-    console.error("schema-init", e);
-    const supplied = request.headers.get("x-setup-token") || "";
-    if (path === "/api/setup" && env.SETUP_TOKEN && supplied === env.SETUP_TOKEN) {
-      const detail = String(e?.message || e).replace(/\s+/g, " ").slice(0, 280);
-      throw new HttpError(500, `Falha ao preparar o banco D1: ${detail}`);
-    }
-    throw e;
-  }
 
   if (method === "OPTIONS") return new Response(null, { status: 204 });
 
