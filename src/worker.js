@@ -1,11 +1,11 @@
 import app from "./index.js";
 
 const encoder = new TextEncoder();
+const nativeFetch = globalThis.fetch.bind(globalThis);
+let emailConfig = null;
 
-// Temporary first-install guard.
-// Only SHA-256 fingerprints are stored in the public repository; the actual
-// administrator name/email are not embedded here. Once the first admin exists,
-// index.js permanently blocks /api/setup with HTTP 409.
+// Temporary first-install guard. Once an administrator exists, index.js blocks
+// /api/setup permanently with HTTP 409.
 const FIRST_ADMIN_EMAIL_SHA256 = "a843d8887ddd1550b05fcddeefc2f8f0f5245fe549cad8a22073906c0de5abf9";
 const FIRST_ADMIN_NAME_SHA256 = "ea8610af1028100feff76cdd5fc1c6b33f943443dca82077c625e19ccf6fa7d6";
 
@@ -34,13 +34,105 @@ async function sha256Hex(value) {
   return Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function envWithSetupToken(env, token) {
+function configureEmail(env) {
+  emailConfig = {
+    apiKey: String(env.BREVO_API_KEY || "").trim(),
+    senderEmail: String(env.BREVO_SENDER_EMAIL || "").trim(),
+    senderName: String(env.BREVO_SENDER_NAME || "Meu Inova").trim() || "Meu Inova",
+  };
+}
+
+function runtimeEnv(env, forcedSetupToken = null) {
+  const setupToken = forcedSetupToken ?? normalizeSetupToken(env.SETUP_TOKEN);
   return new Proxy(env, {
     get(target, prop, receiver) {
-      if (prop === "SETUP_TOKEN") return token;
+      if (prop === "SETUP_TOKEN") return setupToken;
+      // index.js was originally written for Resend. Expose the Brevo key under
+      // the compatibility name so its existing e-mail flow remains enabled.
+      if (prop === "RESEND_API_KEY") return target.BREVO_API_KEY || target.RESEND_API_KEY;
+      if (prop === "MAIL_FROM" && target.BREVO_SENDER_EMAIL) {
+        const name = String(target.BREVO_SENDER_NAME || "Meu Inova");
+        return `${name} <${target.BREVO_SENDER_EMAIL}>`;
+      }
       return Reflect.get(target, prop, receiver);
     },
   });
+}
+
+function requestUrl(input) {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  if (input && typeof input.url === "string") return input.url;
+  return "";
+}
+
+async function brevoAwareFetch(input, init = undefined) {
+  const url = requestUrl(input);
+
+  // Compatibility adapter: index.js sends a Resend-shaped payload. Convert only
+  // that one endpoint to Brevo's transactional e-mail API. All other outbound
+  // requests (Twilio, WhatsApp etc.) use the native Worker fetch unchanged.
+  if (url === "https://api.resend.com/emails" && emailConfig?.apiKey) {
+    if (!emailConfig.senderEmail) {
+      throw new Error("BREVO_SENDER_EMAIL não configurado no Cloudflare.");
+    }
+
+    let rawBody = init?.body;
+    if (rawBody == null && input instanceof Request) rawBody = await input.clone().text();
+    const source = JSON.parse(String(rawBody || "{}"));
+    const recipients = (Array.isArray(source.to) ? source.to : [source.to])
+      .filter(Boolean)
+      .map((item) => {
+        if (typeof item === "string") return { email: item };
+        if (item && typeof item === "object" && item.email) {
+          return item.name ? { email: item.email, name: item.name } : { email: item.email };
+        }
+        return null;
+      })
+      .filter(Boolean);
+
+    if (!recipients.length) throw new Error("Nenhum destinatário de e-mail informado.");
+
+    const body = {
+      sender: {
+        email: emailConfig.senderEmail,
+        name: emailConfig.senderName,
+      },
+      to: recipients,
+      subject: String(source.subject || "Meu Inova"),
+      textContent: String(source.text || source.textContent || ""),
+    };
+
+    return nativeFetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "api-key": emailConfig.apiKey,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  return nativeFetch(input, init);
+}
+
+// The imported application calls the standard global fetch for its providers.
+// Keep a single adapter installed for this Worker isolate; it forwards every
+// non-email request directly to the original Cloudflare fetch implementation.
+try {
+  Object.defineProperty(globalThis, "fetch", {
+    value: brevoAwareFetch,
+    writable: true,
+    configurable: true,
+  });
+} catch {
+  try {
+    globalThis.fetch = brevoAwareFetch;
+  } catch {
+    // If a future runtime makes fetch immutable, normal application requests still
+    // work; the e-mail call will surface a provider error instead of exposing keys.
+  }
 }
 
 async function buildNormalizedSetupRequest(request, forcedToken = null) {
@@ -50,7 +142,6 @@ async function buildNormalizedSetupRequest(request, forcedToken = null) {
   );
 
   data.setupToken = supplied;
-
   const headers = new Headers(request.headers);
   headers.set("content-type", "application/json");
   headers.set("x-setup-token", supplied);
@@ -74,44 +165,38 @@ async function isAuthorizedFirstAdmin(data) {
 
 export default {
   async fetch(request, env, ctx) {
+    configureEmail(env);
     const url = new URL(request.url);
 
     if (url.pathname === "/api/setup" && request.method.toUpperCase() === "POST") {
       try {
         const parsed = await buildNormalizedSetupRequest(request);
-
-        // Normal path: use the SETUP_TOKEN from Cloudflare after normalization.
         const cloudflareToken = normalizeSetupToken(env.SETUP_TOKEN);
         const suppliedToken = normalizeSetupToken(parsed.data.setupToken);
+
         if (cloudflareToken && suppliedToken && cloudflareToken === suppliedToken) {
-          const normalizedEnv = envWithSetupToken(env, cloudflareToken);
-          return await app.fetch(parsed.request, normalizedEnv, ctx);
+          return await app.fetch(parsed.request, runtimeEnv(env, cloudflareToken), ctx);
         }
 
-        // Recovery path for this first deployment only. It does not make setup
-        // generally public: the submitted admin identity must match the two
-        // SHA-256 fingerprints above. index.js still checks that no administrator
-        // exists before inserting anything, so this path becomes unusable after
-        // the first successful installation.
         if (await isAuthorizedFirstAdmin(parsed.data)) {
           const oneTimeMarker = `first-install-${crypto.randomUUID()}`;
           const forced = await buildNormalizedSetupRequest(request, oneTimeMarker);
-          const guardedEnv = envWithSetupToken(env, oneTimeMarker);
-          return await app.fetch(forced.request, guardedEnv, ctx);
+          return await app.fetch(forced.request, runtimeEnv(env, oneTimeMarker), ctx);
         }
 
-        return await app.fetch(parsed.request, envWithSetupToken(env, cloudflareToken), ctx);
+        return await app.fetch(parsed.request, runtimeEnv(env, cloudflareToken), ctx);
       } catch {
-        return await app.fetch(request, env, ctx);
+        return await app.fetch(request, runtimeEnv(env), ctx);
       }
     }
 
-    return await app.fetch(request, env, ctx);
+    return await app.fetch(request, runtimeEnv(env), ctx);
   },
 
   async scheduled(controller, env, ctx) {
+    configureEmail(env);
     if (typeof app.scheduled === "function") {
-      return await app.scheduled(controller, env, ctx);
+      return await app.scheduled(controller, runtimeEnv(env), ctx);
     }
   },
 };
