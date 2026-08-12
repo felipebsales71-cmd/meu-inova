@@ -7,7 +7,8 @@
   "secrets": {
     "required": [
       "SETUP_TOKEN",
-      "SESSION_SECRET"
+      "SESSION_SECRET",
+      "BREVO_API_KEY"
     ]
   },
   "assets": {
@@ -29,6 +30,8 @@
     "APP_TIMEZONE": "America/Cuiaba",
     "RESET_TOKEN_MINUTES": "30",
     "SESSION_HOURS": "12",
-    "MAIL_FROM": "Meu Inova <noreply@example.com>"
+    "MAIL_FROM": "Meu Inova <noreply@example.com>",
+    "BREVO_SENDER_EMAIL": "felipebsales71@gmail.com",
+    "BREVO_SENDER_NAME": "Meu Inova"
   }
 }
