@@ -1,8 +1,6 @@
 const encoder = new TextEncoder();
 
 const SCHEMA_SQL = `
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE IF NOT EXISTS admins (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
