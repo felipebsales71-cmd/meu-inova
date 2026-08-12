@@ -1,4 +1,5 @@
 import app from "./index.js";
+import { handleAcademic } from "./academic.js";
 
 const encoder = new TextEncoder();
 const nativeFetch = globalThis.fetch.bind(globalThis);
@@ -47,8 +48,6 @@ function runtimeEnv(env, forcedSetupToken = null) {
   return new Proxy(env, {
     get(target, prop, receiver) {
       if (prop === "SETUP_TOKEN") return setupToken;
-      // index.js was originally written for Resend. Expose the Brevo key under
-      // the compatibility name so its existing e-mail flow remains enabled.
       if (prop === "RESEND_API_KEY") return target.BREVO_API_KEY || target.RESEND_API_KEY;
       if (prop === "MAIL_FROM" && target.BREVO_SENDER_EMAIL) {
         const name = String(target.BREVO_SENDER_NAME || "Meu Inova");
@@ -68,15 +67,8 @@ function requestUrl(input) {
 
 async function brevoAwareFetch(input, init = undefined) {
   const url = requestUrl(input);
-
-  // Compatibility adapter: index.js sends a Resend-shaped payload. Convert only
-  // that one endpoint to Brevo's transactional e-mail API. All other outbound
-  // requests (Twilio, WhatsApp etc.) use the native Worker fetch unchanged.
   if (url === "https://api.resend.com/emails" && emailConfig?.apiKey) {
-    if (!emailConfig.senderEmail) {
-      throw new Error("BREVO_SENDER_EMAIL não configurado no Cloudflare.");
-    }
-
+    if (!emailConfig.senderEmail) throw new Error("BREVO_SENDER_EMAIL não configurado no Cloudflare.");
     let rawBody = init?.body;
     if (rawBody == null && input instanceof Request) rawBody = await input.clone().text();
     const source = JSON.parse(String(rawBody || "{}"));
@@ -84,77 +76,34 @@ async function brevoAwareFetch(input, init = undefined) {
       .filter(Boolean)
       .map((item) => {
         if (typeof item === "string") return { email: item };
-        if (item && typeof item === "object" && item.email) {
-          return item.name ? { email: item.email, name: item.name } : { email: item.email };
-        }
+        if (item && typeof item === "object" && item.email) return item.name ? { email: item.email, name: item.name } : { email: item.email };
         return null;
       })
       .filter(Boolean);
-
     if (!recipients.length) throw new Error("Nenhum destinatário de e-mail informado.");
-
-    const body = {
-      sender: {
-        email: emailConfig.senderEmail,
-        name: emailConfig.senderName,
-      },
-      to: recipients,
-      subject: String(source.subject || "Meu Inova"),
-      textContent: String(source.text || source.textContent || ""),
-    };
-
     return nativeFetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST",
-      headers: {
-        accept: "application/json",
-        "api-key": emailConfig.apiKey,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(body),
+      headers: { accept: "application/json", "api-key": emailConfig.apiKey, "content-type": "application/json" },
+      body: JSON.stringify({ sender: { email: emailConfig.senderEmail, name: emailConfig.senderName }, to: recipients, subject: String(source.subject || "Meu Inova"), textContent: String(source.text || source.textContent || "") }),
     });
   }
-
   return nativeFetch(input, init);
 }
 
-// The imported application calls the standard global fetch for its providers.
-// Keep a single adapter installed for this Worker isolate; it forwards every
-// non-email request directly to the original Cloudflare fetch implementation.
 try {
-  Object.defineProperty(globalThis, "fetch", {
-    value: brevoAwareFetch,
-    writable: true,
-    configurable: true,
-  });
+  Object.defineProperty(globalThis, "fetch", { value: brevoAwareFetch, writable: true, configurable: true });
 } catch {
-  try {
-    globalThis.fetch = brevoAwareFetch;
-  } catch {
-    // If a future runtime makes fetch immutable, normal application requests still
-    // work; the e-mail call will surface a provider error instead of exposing keys.
-  }
+  try { globalThis.fetch = brevoAwareFetch; } catch {}
 }
 
 async function buildNormalizedSetupRequest(request, forcedToken = null) {
   const data = await request.clone().json();
-  const supplied = forcedToken ?? normalizeSetupToken(
-    request.headers.get("x-setup-token") || data.setupToken || "",
-  );
-
+  const supplied = forcedToken ?? normalizeSetupToken(request.headers.get("x-setup-token") || data.setupToken || "");
   data.setupToken = supplied;
   const headers = new Headers(request.headers);
   headers.set("content-type", "application/json");
   headers.set("x-setup-token", supplied);
-
-  return {
-    data,
-    request: new Request(request.url, {
-      method: request.method,
-      headers,
-      body: JSON.stringify(data),
-      redirect: request.redirect,
-    }),
-  };
+  return { data, request: new Request(request.url, { method: request.method, headers, body: JSON.stringify(data), redirect: request.redirect }) };
 }
 
 async function isAuthorizedFirstAdmin(data) {
@@ -167,36 +116,35 @@ export default {
   async fetch(request, env, ctx) {
     configureEmail(env);
     const url = new URL(request.url);
+    const effectiveEnv = runtimeEnv(env);
+
+    // Módulo acadêmico isolado: usa o mesmo D1 e a mesma assinatura de sessão,
+    // sem interferir nas rotas financeiras e administrativas já existentes.
+    if (url.pathname.startsWith("/api/academic/")) {
+      return await handleAcademic(request, effectiveEnv);
+    }
 
     if (url.pathname === "/api/setup" && request.method.toUpperCase() === "POST") {
       try {
         const parsed = await buildNormalizedSetupRequest(request);
         const cloudflareToken = normalizeSetupToken(env.SETUP_TOKEN);
         const suppliedToken = normalizeSetupToken(parsed.data.setupToken);
-
-        if (cloudflareToken && suppliedToken && cloudflareToken === suppliedToken) {
-          return await app.fetch(parsed.request, runtimeEnv(env, cloudflareToken), ctx);
-        }
-
+        if (cloudflareToken && suppliedToken && cloudflareToken === suppliedToken) return await app.fetch(parsed.request, runtimeEnv(env, cloudflareToken), ctx);
         if (await isAuthorizedFirstAdmin(parsed.data)) {
           const oneTimeMarker = `first-install-${crypto.randomUUID()}`;
           const forced = await buildNormalizedSetupRequest(request, oneTimeMarker);
           return await app.fetch(forced.request, runtimeEnv(env, oneTimeMarker), ctx);
         }
-
         return await app.fetch(parsed.request, runtimeEnv(env, cloudflareToken), ctx);
       } catch {
-        return await app.fetch(request, runtimeEnv(env), ctx);
+        return await app.fetch(request, effectiveEnv, ctx);
       }
     }
-
-    return await app.fetch(request, runtimeEnv(env), ctx);
+    return await app.fetch(request, effectiveEnv, ctx);
   },
 
   async scheduled(controller, env, ctx) {
     configureEmail(env);
-    if (typeof app.scheduled === "function") {
-      return await app.scheduled(controller, runtimeEnv(env), ctx);
-    }
+    if (typeof app.scheduled === "function") return await app.scheduled(controller, runtimeEnv(env), ctx);
   },
 };
