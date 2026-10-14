@@ -1,6 +1,6 @@
 import app from "./index.js";
 import { handleAcademic } from "./academic.js";
-import { handleStaff, tryStaffLogin, enforceStaffAccess } from "./staff.js";
+import { handleStaff, tryStaffLogin, tryStaffForgotPassword, enforceStaffAccess } from "./staff.js";
 import { handleFaculty } from "./faculty.js";
 
 const encoder = new TextEncoder();
@@ -83,6 +83,7 @@ export default {
       return await handleStaff(request, effectiveEnv);
     }
 
+    if(url.pathname==='/api/auth/forgot-password'&&request.method==='POST'){try{const result=await tryStaffForgotPassword(request,effectiveEnv);if(result)return result}catch(e){return moduleErrorResponse(e)}}
     if (url.pathname === '/api/auth/admin/login' && request.method.toUpperCase() === 'POST') {
       try {
         const staffResponse = await tryStaffLogin(request, effectiveEnv);
