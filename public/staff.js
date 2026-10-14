@@ -35,7 +35,7 @@
     alunos:'students.view',
     'admin-financeiro':'finance.view',
     notificacoes:'notifications.manage',
-    'admin-relatorios':'reports.view',
+    'admin-relatorios':'academic.view',
     'admin-academico':'academic.view',
     professores:'faculty.view',
     'admin-avaliacoes':'exams.view',
