@@ -260,7 +260,7 @@ async function sendAccessEmail(env, staff, link, expiresAt) {
   if (!staff.email) throw new StaffError(400, 'Cadastre o e-mail deste usuário antes de enviar o acesso.');
   if (!env.RESEND_API_KEY) throw new StaffError(503, 'Provedor de e-mail não configurado.');
   const from = env.MAIL_FROM || 'Meu Inova <noreply@example.com>';
-  const text = `Olá, ${staff.name}.\n\nSeu acesso ao Meu Inova foi criado.\n\nUsuário: ${staff.username}\nCrie sua senha neste link: ${link}\n\nO link expira em ${new Date(expiresAt).toLocaleString('pt-BR')}.\n\nSe você não esperava esta mensagem, ignore este e-mail.`;
+  const text = `Olá, ${staff.name}.\n\nDefina ou recupere seu acesso ao Meu Inova.\n\nUsuário: ${staff.username}\nDefina sua senha neste link: ${link}\n\nO link expira em ${new Date(expiresAt).toLocaleString('pt-BR')}.\n\nSe você não esperava esta mensagem, ignore este e-mail.`;
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, 'content-type': 'application/json' },
@@ -268,6 +268,9 @@ async function sendAccessEmail(env, staff, link, expiresAt) {
   });
   if (!response.ok) throw new StaffError(502, `E-mail recusado pelo provedor (${response.status}).`);
 }
+
+
+export async function tryStaffForgotPassword(request,env){const data=await parseBody(request.clone());if(data.role!=='admin')return null;await ensureStaffSchema(env);const identifier=String(data.identifier||'').trim().toLowerCase();const row=await env.DB.prepare("SELECT * FROM staff_users WHERE lower(username)=? OR lower(COALESCE(email,''))=? LIMIT 1").bind(identifier,identifier).first();if(!row)return null;const response=()=>json({message:'Se houver uma conta válida, o link de redefinição será enviado ao e-mail do titular.'});if(!row.active||!row.email)return response();const raw=b64urlBytes(crypto.getRandomValues(new Uint8Array(32))),expiresAt=new Date(Date.now()+30*60000).toISOString();await env.DB.prepare('DELETE FROM staff_access_tokens WHERE staff_id=? AND used_at IS NULL').bind(row.id).run();await env.DB.prepare('INSERT INTO staff_access_tokens(staff_id,token_hash,expires_at,created_at) VALUES(?,?,?,?)').bind(row.id,await sha256Hex(raw),expiresAt,nowIso()).run();await sendAccessEmail(env,row,`${new URL(request.url).origin}/equipe-acesso.html?token=${encodeURIComponent(raw)}`,expiresAt);return response()}
 
 export async function tryStaffLogin(request, env) {
   await ensureStaffSchema(env);
