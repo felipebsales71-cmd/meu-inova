@@ -14,19 +14,19 @@
     management:{label:'Gestão',description:'Operação ampla, sem administrar proprietários ou configurações críticas.',permissions:['dashboard.view','students.view','students.manage','finance.view','finance.manage','academic.view','academic.manage','exams.view','exams.manage','faculty.view','faculty.manage','reports.view','notifications.manage','communications.manage','staff.view','audit.view']},
     coordination:{label:'Coordenação',description:'Gestão acadêmica, professores, alunos e avaliações.',permissions:['dashboard.view','students.view','academic.view','academic.manage','exams.view','exams.manage','faculty.view','faculty.manage','reports.view','communications.manage']},
     secretary:{label:'Secretaria',description:'Cadastro de alunos, consultas acadêmicas e atendimento institucional.',permissions:['dashboard.view','students.view','students.manage','finance.view','academic.view','faculty.view','reports.view','communications.manage']},
-    finance:{label:'Financeiro',description:'Cobranças, pagamentos, inadimplência e relatórios financeiros.',permissions:['dashboard.view','students.view','finance.view','finance.manage','reports.view','notifications.manage']},
-    professor:{label:'Professor',description:'Conteúdo acadêmico e avaliações. Portal docente dedicado será a próxima evolução.',permissions:['dashboard.view','academic.view','exams.view','exams.manage','faculty.view']},
+
+    professor:{label:'Professor',description:'Videoaulas, materiais e avaliações nas disciplinas vinculadas ao professor.',permissions:['dashboard.view','academic.view','exams.view','exams.manage','faculty.view']},
     custom:{label:'Personalizado',description:'Permissões escolhidas individualmente.',permissions:['dashboard.view']},
   };
 
   const GROUPS = [
     ['Visão geral',[['dashboard.view','Acessar dashboard executivo']]],
     ['Alunos',[['students.view','Ver alunos'],['students.manage','Cadastrar, editar e suspender alunos']]],
-    ['Financeiro',[['finance.view','Ver financeiro e inadimplência'],['finance.manage','Criar cobranças e registrar pagamentos']]],
+
     ['Acadêmico',[['academic.view','Ver cursos, disciplinas e materiais'],['academic.manage','Criar e editar cursos, disciplinas, módulos e aulas']]],
     ['Avaliações',[['exams.view','Ver provas e tentativas'],['exams.manage','Criar, editar e publicar provas']]],
     ['Professores',[['faculty.view','Ver corpo docente'],['faculty.manage','Cadastrar e vincular professores']]],
-    ['Relatórios e comunicação',[['reports.view','Ver relatórios'],['notifications.manage','Gerenciar notificações de inadimplência'],['communications.manage','Publicar comunicados']]],
+    ['Relatórios e comunicação',[['reports.view','Ver relatórios'],['communications.manage','Publicar comunicados']]],
     ['Sistema',[['staff.view','Ver equipe e permissões'],['staff.manage','Criar usuários e alterar permissões'],['audit.view','Ver auditoria'],['system.manage','Alterar configurações críticas']]],
   ];
 
@@ -78,7 +78,7 @@
     const intro = document.querySelector('.login-card .intro');
     if (intro) intro.textContent = 'Use seu e-mail administrativo ou usuário institucional.';
     const demo = document.querySelector('.login-demo');
-    if (demo) demo.innerHTML = '<b>Acesso individual e auditável</b><br><span class="muted">Direção, gestão, secretaria e financeiro podem ter credenciais e permissões diferentes.</span>';
+    if (demo) demo.innerHTML = '<b>Acesso individual e auditável</b><br><span class="muted">Professores, coordenação e administração têm credenciais individuais e permissões diferentes.</span>';
   }
 
   function applyNavigationPermissions() {
@@ -138,13 +138,13 @@
   function permissionSummary(s) {
     const labels = [];
     if (s.permissions.includes('students.manage')) labels.push('Alunos');
-    if (s.permissions.includes('finance.manage')) labels.push('Financeiro');
+
     if (s.permissions.includes('academic.manage')) labels.push('Acadêmico');
     if (s.permissions.includes('exams.manage')) labels.push('Provas');
     if (s.permissions.includes('staff.manage')) labels.push('Equipe');
     if (!labels.length) {
       if (s.permissions.includes('students.view')) labels.push('Consulta de alunos');
-      if (s.permissions.includes('finance.view')) labels.push('Consulta financeira');
+
       if (s.permissions.includes('academic.view')) labels.push('Consulta acadêmica');
     }
     return labels.slice(0,4);
@@ -157,7 +157,7 @@
     const suspended = rows.filter(x => !x.active).length;
     const canManage = can('staff.manage');
     return `<div class="staff-page-toolbar">
-      <div><span class="staff-eyebrow">CONTROLE DE ACESSO</span><h2>Usuários internos</h2><p>Direção, gestão, secretaria, financeiro e coordenação com credenciais individuais.</p></div>
+      <div><span class="staff-eyebrow">CONTROLE DE ACESSO</span><h2>Usuários internos</h2><p>Professores, coordenação e administração com credenciais individuais.</p></div>
       ${canManage?'<button class="primary-btn staff-add-btn" onclick="newStaffUser()">Adicionar usuário</button>':''}
     </div>
     <div class="grid grid-4 staff-kpis">
