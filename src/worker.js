@@ -74,6 +74,7 @@ export default {
   async fetch(request, env, ctx) {
     configureEmail(env);
     const url = new URL(request.url);
+    if (/^\/api\/(?:admin\/payments|student\/payments|admin\/notification|admin\/notifications)(?:[/-]|$)/.test(url.pathname)) return new Response(JSON.stringify({detail:'Recurso desativado: a plataforma é exclusivamente educacional.'}),{status:410,headers:{'content-type':'application/json; charset=utf-8'}});
     const effectiveEnv = runtimeEnv(env);
 
     // Equipe e permissões usa uma rota própria. O teste exato abaixo é importante:
@@ -116,6 +117,7 @@ export default {
   },
   async scheduled(controller, env, ctx) {
     configureEmail(env);
-    if (typeof app.scheduled === "function") return await app.scheduled(controller, runtimeEnv(env), ctx);
+    // Scheduled collection reminders are disabled in the education-only platform.
+    return;
   },
 };
