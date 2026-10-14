@@ -24,7 +24,7 @@
     }
   ],
   "triggers": {
-    "crons": ["0 12 * * *"]
+    "crons": []
   },
   "vars": {
     "APP_TIMEZONE": "America/Cuiaba",
