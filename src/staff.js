@@ -297,6 +297,21 @@ export async function tryStaffLogin(request, env) {
   });
 }
 
+export async function academicRemovalActor(request,env,permission) {
+  const actor=await adminFromSession(request,env);
+  if(actor.profileKey==='professor') {
+    const email=String(actor.staffRow?.email||'').trim().toLowerCase();
+    if(!email)throw new StaffError(403,'Vincule o e-mail institucional do professor às suas disciplinas.');
+    const exists=await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='academic_professor_disciplines'").first();
+    if(!exists)throw new StaffError(403,'Professor ainda não vinculado a uma disciplina.');
+    const rows=await env.DB.prepare(`SELECT pd.discipline_id FROM academic_professor_disciplines pd JOIN academic_professors p ON p.id=pd.professor_id WHERE lower(trim(p.email))=? AND p.active=1`).bind(email).all();
+    actor.disciplineIds=(rows.results||[]).map(r=>Number(r.discipline_id));
+    return actor;
+  }
+  requirePermission(actor,permission);
+  return actor;
+}
+
 export async function enforceStaffAccess(request, env) {
   const auth = request.headers.get('authorization') || '';
   if (!auth.startsWith('Bearer ')) return null;
@@ -307,6 +322,8 @@ export async function enforceStaffAccess(request, env) {
   const path = new URL(request.url).pathname;
   const method = request.method.toUpperCase();
   const read = method === 'GET' || method === 'HEAD';
+  // These routes authorize both the operation and the professor's discipline in the academic module.
+  if (/^\/api\/academic\/admin\/(?:lessons|exams)\/\d+\/(?:delete|restore)$/.test(path) || path === '/api/academic/admin/deleted-items') return null;
   let permission = null;
   let safeEmpty = null;
 
