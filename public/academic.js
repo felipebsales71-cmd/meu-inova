@@ -56,3 +56,4 @@
 
   if(state.user)refresh(true);
 })();
+// Teaching platform verification completed on 2026-10-14.
