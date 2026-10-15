@@ -2,6 +2,7 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 const SCHEMA = `
+CREATE TABLE IF NOT EXISTS academic_deleted_items (kind TEXT NOT NULL,item_id INTEGER NOT NULL,discipline_id INTEGER NOT NULL,title TEXT NOT NULL,previous_state TEXT NOT NULL,deleted_at TEXT NOT NULL,deleted_by INTEGER NOT NULL,PRIMARY KEY(kind,item_id));
 CREATE TABLE IF NOT EXISTS academic_professors (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -35,16 +36,17 @@ function view(row){return{id:Number(row.id),name:row.name,email:row.email||'',ph
 
 export async function handleFaculty(request,env){try{await ensure(env);await adminSession(request,env);const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
   if(path==='/api/faculty/professors'&&method==='GET'){
-    const r=await env.DB.prepare(`SELECT p.*,(SELECT COUNT(*) FROM academic_professor_disciplines pd WHERE pd.professor_id=p.id) discipline_count FROM academic_professors p ORDER BY p.name`).all();
+    const r=await env.DB.prepare(`SELECT p.*,(SELECT COUNT(*) FROM academic_professor_disciplines pd WHERE pd.professor_id=p.id) discipline_count FROM academic_professors p WHERE p.id NOT IN (SELECT item_id FROM academic_deleted_items WHERE kind='professor') ORDER BY p.name`).all();
     return json((r.results||[]).map(view));
   }
   if(path==='/api/faculty/professors'&&method==='POST'){
     const d=await body(request),name=String(d.name||'').trim();if(!name)throw new FacultyError(400,'Informe o nome do professor.');
     const existing=await env.DB.prepare('SELECT * FROM academic_professors WHERE lower(name)=lower(?) LIMIT 1').bind(name).first();
-    if(existing)return json(view(existing));
+    if(existing){if(await env.DB.prepare("SELECT item_id FROM academic_deleted_items WHERE kind='professor' AND item_id=?").bind(existing.id).first())throw new FacultyError(409,'Professor na lixeira. Restaure o cadastro em Itens excluídos.');return json(view(existing));}
     const ins=await env.DB.prepare('INSERT INTO academic_professors(name,email,phone,specialty,registration,active,created_at) VALUES(?,?,?,?,?,1,?)').bind(name,String(d.email||'').trim()||null,String(d.phone||'').trim()||null,String(d.specialty||'').trim()||null,String(d.registration||'').trim()||null,nowIso()).run();
     const row=await env.DB.prepare('SELECT * FROM academic_professors WHERE id=?').bind(ins.meta.last_row_id).first();return json(view(row),201);
   }
+  const entity=path.match(/^\/api\/faculty\/professors\/(\d+)/);if(entity&&method!=='GET'&&await env.DB.prepare("SELECT item_id FROM academic_deleted_items WHERE kind='professor' AND item_id=?").bind(Number(entity[1])).first())throw new FacultyError(409,'Restaure o professor antes de alterar ou vincular.');
   const match=path.match(/^\/api\/faculty\/professors\/(\d+)$/);
   if(match&&method==='PATCH'){
     const id=Number(match[1]),d=await body(request),row=await env.DB.prepare('SELECT * FROM academic_professors WHERE id=?').bind(id).first();if(!row)throw new FacultyError(404,'Professor não encontrado.');
@@ -53,7 +55,7 @@ export async function handleFaculty(request,env){try{await ensure(env);await adm
   }
   const assign=path.match(/^\/api\/faculty\/professors\/(\d+)\/assign$/);
   if(assign&&method==='POST'){
-    const id=Number(assign[1]),d=await body(request),disciplineId=Number(d.disciplineId);const professor=await env.DB.prepare('SELECT * FROM academic_professors WHERE id=?').bind(id).first();if(!professor)throw new FacultyError(404,'Professor não encontrado.');const disc=await env.DB.prepare('SELECT id FROM academic_disciplines WHERE id=?').bind(disciplineId).first();if(!disc)throw new FacultyError(404,'Disciplina não encontrada.');
+    const id=Number(assign[1]),d=await body(request),disciplineId=Number(d.disciplineId);const professor=await env.DB.prepare('SELECT * FROM academic_professors WHERE id=?').bind(id).first();if(!professor)throw new FacultyError(404,'Professor não encontrado.');const disc=await env.DB.prepare('SELECT id FROM academic_disciplines WHERE id=?').bind(disciplineId).first();if(!disc)throw new FacultyError(404,'Disciplina não encontrada.');if(await env.DB.prepare("SELECT x.item_id FROM academic_deleted_items x JOIN academic_disciplines d ON (x.kind='discipline' AND x.item_id=d.id) OR (x.kind='course' AND x.item_id=d.course_id) WHERE d.id=? LIMIT 1").bind(disciplineId).first())throw new FacultyError(409,'Restaure o curso e a disciplina antes de vincular.');
     await env.DB.prepare('INSERT OR IGNORE INTO academic_professor_disciplines(professor_id,discipline_id,created_at) VALUES(?,?,?)').bind(id,disciplineId,nowIso()).run();
     await env.DB.prepare('UPDATE academic_disciplines SET professor=? WHERE id=?').bind(professor.name,disciplineId).run();
     return json({message:'Professor vinculado à disciplina.'});
