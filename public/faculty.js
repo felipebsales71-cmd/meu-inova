@@ -2,6 +2,7 @@
 (() => {
   if (portal !== 'admin') return;
 
+  const canFacultyManage=()=>state.user?.profileKey!=='professor'&&(!Array.isArray(state.user?.permissions)||state.user.permissions.includes('faculty.manage'));
   const previousBoot = boot;
   const previousPageContent = pageContent;
   state.faculty = state.faculty || [];
@@ -42,6 +43,7 @@
     }
   }
 
+  window.refreshInovaFaculty=loadFaculty;
   boot = async function () {
     await previousBoot();
     if (state.user) await loadFaculty(true);
@@ -59,11 +61,11 @@
     </div>
     <div class="grid grid-3" style="margin-top:16px">
       <div class="card span-2">
-        <div class="card-head"><div><h3>Corpo docente</h3><p class="small muted">Dados institucionais dos professores e suas disciplinas.</p></div><button class="primary-btn" onclick="newProfessor()">Novo professor</button></div>
+        <div class="card-head"><div><h3>Corpo docente</h3><p class="small muted">Dados institucionais dos professores e suas disciplinas.</p></div>${canFacultyManage()?'<button class="primary-btn" onclick="newProfessor()">Novo professor</button>':''}<button class="secondary-btn" onclick="openAcademicTrash()">Itens excluídos</button></div>
         ${rows.length ? `<div class="faculty-grid">${rows.map(p => `<div class="faculty-card">
           <div class="faculty-card-head"><div class="avatar">${initials(p.name)}</div><div><h3>${esc(p.name)}</h3><p>${esc(p.specialty || 'Área não informada')}</p></div>${badge(p.active ? 'Ativo' : 'Suspenso')}</div>
           <div class="faculty-meta"><span>${esc(p.email || 'E-mail não informado')}</span><span>${p.disciplineCount} disciplina(s)</span></div>
-          <div class="staff-actions"><button class="secondary-btn" onclick="assignProfessor(${p.id})">Vincular disciplina</button><button class="secondary-btn" onclick="editProfessor(${p.id})">Editar</button></div>
+          <div class="staff-actions">${canFacultyManage()?`<button class="secondary-btn" onclick="assignProfessor(${p.id})">Vincular disciplina</button><button class="secondary-btn" onclick="editProfessor(${p.id})">Editar</button><button class="secondary-btn" style="color:#b42318" onclick="deleteAcademicStructure('professor',${p.id})">Excluir professor</button>`:'<span class="small muted">Consulta do cadastro docente</span>'}</div>
         </div>`).join('')}</div>` : '<div class="academic-empty">Nenhum professor cadastrado ainda.</div>'}
       </div>
       <div class="card">
