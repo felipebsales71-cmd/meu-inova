@@ -327,7 +327,7 @@ export async function enforceStaffAccess(request, env) {
   const read = method === 'GET' || method === 'HEAD';
   if (actor.profileKey === 'professor' && path.startsWith('/api/academic/admin/')) return null; // discipline authorization is enforced by handleAcademic.
   // These routes authorize both the operation and the professor's discipline in the academic module.
-  if (/^\/api\/academic\/admin\/(?:lessons|exams)\/\d+\/(?:delete|restore)$/.test(path) || path === '/api/academic/admin/deleted-items') return null;
+  if (/^\/api\/academic\/admin\/(?:lessons|exams|courses|disciplines|professors)\/\d+\/(?:delete|restore)$/.test(path) || path === '/api/academic/admin/deleted-items') return null;
   let permission = null;
   let safeEmpty = null;
 
